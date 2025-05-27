@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tallboy Drinking Board Game</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Bebas Neue', sans-serif;
+      background-color: #111;
+      color: white;
+      margin: 0;
+      padding: 20px;
+      text-align: center;
+    }
+    
+    .game-container {
+      max-width: 800px;
+      margin: 0 auto;
+      position: relative;
+    }
+    
+    .board {
+      background-image: url('https://example.com/board-texture.jpg');
+      background-size: cover;
+      border: 5px solid #ff0000;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 20px;
+      position: relative;
+      min-height: 400px;
+    }
+    
+    .players {
+      display: flex;
+      justify-content: space-around;
+      margin-bottom: 20px;
+    }
+    
+    .player {
+      background: rgba(0,0,0,0.7);
+      padding: 10px;
+      border-radius: 5px;
+      border: 2px solid #ffcc00;
+      width: 45%;
+    }
+    
+    .player.active {
+      border-color: #ff0000;
+      box-shadow: 0 0 15px #ff0000;
+    }
+    
+    .dice-container {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      margin: 30px 0;
+    }
+    
+    .die {
+      width: 80px;
+      height: 80px;
+      background: white;
+      border-radius: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 2.5rem;
+      color: black;
+      box-shadow: 0 0 10px rgba(255,255,255,0.5);
+    }
+    
+    .rules {
+      background: rgba(0,0,0,0.7);
+      padding: 15px;
+      border-radius: 5px;
+      border: 2px solid #00f0ff;
+      margin-top: 20px;
+      min-height: 80px;
+    }
+    
+    button {
+      background: #ff0000;
+      color: white;
+      border: none;
+      padding: 12px 25px;
+      font-size: 1.2rem;
+      font-family: 'Bebas Neue', sans-serif;
+      cursor: pointer;
+      border-radius: 5px;
+      margin: 10px;
+      transition: all 0.3s;
+    }
+    
+    button:hover {
+      background: #cc0000;
+      transform: scale(1.05);
+    }
+    
+    button:disabled {
+      background: #555;
+      cursor: not-allowed;
+    }
+    
+    .game-link {
+      margin: 20px 0;
+      padding: 10px;
+      background: rgba(0,0,0,0.5);
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="game-container">
+    <h1>Tallboy Drinking Board Game</h1>
+    
+    <div class="game-link">
+      <p>Share this link with friends: <span id="gameLink"></span></p>
+    </div>
+    
+    <div class="board">
+      <div class="players">
+        <div class="player" id="player1">
+          <h2>Player 1</h2>
+          <p>Roll: <span id="p1Roll">-</span></p>
+        </div>
+        <div class="player" id="player2">
+          <h2>Player 2</h2>
+          <p>Roll: <span id="p2Roll">-</span></p>
+        </div>
+      </div>
+      
+      <div class="dice-container">
+        <div class="die" id="die1">?</div>
+        <div class="die" id="die2">?</div>
+      </div>
+      
+      <div class="rules" id="currentRule">
+        Waiting for game to start...
+      </div>
+    </div>
+    
+    <button id="rollBtn">ROLL DICE</button>
+    <button id="nextBtn" disabled>NEXT PLAYER</button>
+  </div>
+
+  <!-- Firebase for real-time updates -->
+  <script src="https://www.gstatic.com/firebasejs/9.0.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.0.2/firebase-database-compat.js"></script>
+  
+  <script>
+    // Initialize Firebase (replace with your config)
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT.firebaseapp.com",
+      databaseURL: "https://tallboygames-d6dd5-default-rtdb.firebaseio.com/",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_BUCKET.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+
+    // Game state
+    let gameId = null;
+    let playerId = Math.random().toString(36).substring(2, 9);
+    let playerName = prompt("Enter your name:") || "Player_" + playerId.substring(0, 3);
+    let isHost = false;
+
+    // Drinking game rules
+    const drinkingRules = {
+      1: "Waterfall! Everyone starts drinking. You can't stop until the person before you stops.",
+      2: "You choose someone to drink 2 sips",
+      3: "Me! Drink 3 sips",
+      4: "Floor! Last person to touch the floor drinks 4 sips",
+      5: "Guys! All guys drink 5 sips",
+      6: "Chicks! All girls drink 6 sips",
+      7: "Heaven! Last person to raise their hands drinks 7 sips",
+      8: "Mate! Choose a drinking buddy who drinks when you drink for the rest of the game",
+      9: "Rhyme! Say a word, next player rhymes. First to fail drinks 9 sips",
+      10: "Categories! Choose a category, players name items. First to fail drinks 10 sips",
+      11: "Rule! Make a rule that lasts until the game ends",
+      12: "Question Master! You can ask anyone a question. If they answer, they drink 12 sips"
+    };
+
+    // Initialize game
+    function initGame() {
+      gameId = window.location.hash.substring(1) || Math.random().toString(36).substring(2, 6);
+      
+      if (!window.location.hash) {
+        window.location.hash = gameId;
+        isHost = true;
+        createGame();
+      } else {
+        joinGame();
+      }
+      
+      document.getElementById('gameLink').textContent = window.location.href;
+      
+      // Set up button listeners
+      document.getElementById('rollBtn').addEventListener('click', rollDice);
+      document.getElementById('nextBtn').addEventListener('click', nextPlayer);
+    }
+
+    function createGame() {
+      const initialGameState = {
+        players: {
+          [playerId]: { name: playerName, roll: 0, isActive: true }
+        },
+        currentPlayer: playerId,
+        dice: [0, 0],
+        currentRule: "Waiting for player 2 to join...",
+        gameStarted: false
+      };
+      
+      database.ref('games/' + gameId).set(initialGameState);
+      setupGameListeners();
+    }
+
+    function joinGame() {
+      database.ref('games/' + gameId).once('value').then((snapshot) => {
+        if (snapshot.exists()) {
+          const game = snapshot.val();
+          if (Object.keys(game.players).length < 2) {
+            const updates = {};
+            updates['/players/' + playerId] = { name: playerName, roll: 0, isActive: false };
+            database.ref('games/' + gameId).update(updates);
+            setupGameListeners();
+          } else {
+            alert("Game is full! Only 2 players allowed.");
+          }
+        } else {
+          alert("Game not found. Creating new game...");
+          window.location.hash = "";
+          initGame();
+        }
+      });
+    }
+
+    function setupGameListeners() {
+      database.ref('games/' + gameId).on('value', (snapshot) => {
+        const game = snapshot.val();
+        updateGameUI(game);
+      });
+    }
+
+    function updateGameUI(game) {
+      // Update player displays
+      const players = Object.entries(game.players);
+      if (players.length > 0) {
+        document.getElementById('player1').querySelector('h2').textContent = players[0][1].name;
+        document.getElementById('p1Roll').textContent = players[0][1].roll || "-";
+        document.getElementById('player1').classList.toggle('active', players[0][0] === game.currentPlayer);
+      }
+      
+      if (players.length > 1) {
+        document.getElementById('player2').querySelector('h2').textContent = players[1][1].name;
+        document.getElementById('p2Roll').textContent = players[1][1].roll || "-";
+        document.getElementById('player2').classList.toggle('active', players[1][0] === game.currentPlayer);
+      }
+
+      // Update dice
+      document.getElementById('die1').textContent = game.dice[0] || "?";
+      document.getElementById('die2').textContent = game.dice[1] || "?";
+
+      // Update rule
+      document.getElementById('currentRule').textContent = game.currentRule;
+
+      // Update buttons
+      const rollBtn = document.getElementById('rollBtn');
+      const nextBtn = document.getElementById('nextBtn');
+      
+      rollBtn.disabled = game.currentPlayer !== playerId;
+      nextBtn.disabled = game.currentPlayer !== playerId || !game.gameStarted;
+    }
+
+    function rollDice() {
+      const die1 = Math.floor(Math.random() * 6) + 1;
+      const die2 = Math.floor(Math.random() * 6) + 1;
+      const total = die1 + die2;
+      
+      let rule = drinkingRules[total] || `Drink ${total} sips!`;
+      
+      const updates = {
+        '/dice': [die1, die2],
+        '/players/' + playerId + '/roll': total,
+        '/currentRule': rule,
+        '/gameStarted': true
+      };
+      
+      database.ref('games/' + gameId).update(updates);
+    }
+
+    function nextPlayer() {
+      const gameRef = database.ref('games/' + gameId);
+      
+      gameRef.transaction((game) => {
+        if (game) {
+          const players = Object.keys(game.players);
+          const currentIndex = players.indexOf(game.currentPlayer);
+          const nextIndex = (currentIndex + 1) % players.length;
+          game.currentPlayer = players[nextIndex];
+          
+          // Reset rolls for new round
+          for (const playerId in game.players) {
+            game.players[playerId].roll = 0;
+          }
+          game.dice = [0, 0];
+          game.currentRule = `${game.players[game.currentPlayer].name}'s turn!`;
+        }
+        return game;
+      });
+    }
+
+    // Initialize when page loads
+    window.onload = initGame;
+  </script>
+</body>
+</html>
